@@ -8,15 +8,14 @@ import org.springframework.test.web.servlet.get
 
 
 @WebMvcTest(StatusController::class)
-class StatusControllerTest (@Autowired val mockMvc: MockMvc){
+class StatusControllerTest(@Autowired val mockMvc: MockMvc) {
 
     @Test
-    fun `status returns name and version`(){
-        mockMvc.get("/status")
-            .andExpect{
+    fun `status returns name and version`() {
+        mockMvc.get("/status").andExpect {
                 status { isOk() }
-                jsonPath("$.name"){ value("trendtaker") }
-                jsonPath("$.version"){ value("0.1.0") }
+                jsonPath("$.name") { value("trendtaker") }
+                jsonPath("$.version") { value("0.1.0") }
             }
     }
 

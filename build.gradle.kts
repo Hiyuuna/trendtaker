@@ -3,6 +3,7 @@ plugins {
 	kotlin("plugin.spring") version "2.4.21"
 	id("org.springframework.boot") version "4.2.0"
 	id("io.spring.dependency-management") version "1.1.7"
+	kotlin("plugin.jpa") version "2.4.21"
 }
 
 group = "io.github.hiyuuna"
@@ -28,6 +29,8 @@ dependencies {
 
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	runtimeOnly("com.mysql:mysql-connector-j")
+	implementation("org.springframework.boot:spring-boot-starter-flyway")
+	implementation("org.flywaydb:flyway-mysql")
 }
 
 kotlin {

@@ -17,7 +17,7 @@ class SearchControllerTest(@Autowired private val mockMvc: MockMvc) {
     lateinit var gitHubClient: GitHubClient
 
     @Test
-    fun `search returns repositories from GitHub`() {
+    fun searchReturnsRepositoriesFromGitHub() {
         val repo = GitHubRepo(
             id = 1,
             fullName = "octocat/hello",

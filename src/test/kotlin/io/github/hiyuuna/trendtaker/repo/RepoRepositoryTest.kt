@@ -16,7 +16,7 @@ class RepoRepositoryTest {
     lateinit var repoRepository: RepoRepository
 
     @Test
-    fun `저장한 리포를 다시 읽을 수 있다`() {
+    fun savedRepoCanBeReadBack() {
         val now = Instant.now()
         val repo = Repo(
             id = 1,

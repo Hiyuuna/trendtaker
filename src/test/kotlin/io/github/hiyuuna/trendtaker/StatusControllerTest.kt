@@ -11,7 +11,7 @@ import org.springframework.test.web.servlet.get
 class StatusControllerTest(@Autowired val mockMvc: MockMvc) {
 
     @Test
-    fun `status returns name and version`() {
+    fun statusReturnsNameAndVersion() {
         mockMvc.get("/status").andExpect {
                 status { isOk() }
                 jsonPath("$.name") { value("trendtaker") }

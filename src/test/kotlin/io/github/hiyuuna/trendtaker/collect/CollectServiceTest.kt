@@ -6,6 +6,8 @@ import io.github.hiyuuna.trendtaker.github.SearchResponse
 import io.github.hiyuuna.trendtaker.repo.RepoRepository
 import io.github.hiyuuna.trendtaker.repo.RepoSnapshotRepository
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.BDDMockito.given
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -32,8 +34,10 @@ class CollectServiceTest {
     @MockitoBean
     lateinit var gitHubClient: GitHubClient
 
+    private val repoId = 900001L
+
     private fun repoWithStars(stars: Int) = GitHubRepo(
-        id = 900001,
+        id = repoId,
         fullName = "octocat/hello-world",
         description = null,
         language = "Kotlin",
@@ -48,21 +52,37 @@ class CollectServiceTest {
         archived = false,
     )
 
+    private fun searchReturns(vararg repos: GitHubRepo) {
+        given(gitHubClient.searchRepositories(anyString(), anyInt()))
+            .willReturn(SearchResponse(repos.size, repos.toList()))
+    }
+
     @Test
     fun collectingTwiceOnSameDayKeepsOneSnapshot() {
-        val morning = Instant.parse("2026-11-23T01:00:00Z")
-        val evening = Instant.parse("2026-11-23T10:00:00Z")
+        searchReturns(repoWithStars(100))
+        given(gitHubClient.getRepository(repoId)).willReturn(repoWithStars(100))
+        collectService.collect(Instant.parse("2026-11-23T01:00:00Z"))
 
-        given(gitHubClient.searchRepositories("q", 100))
-            .willReturn(SearchResponse(1, listOf(repoWithStars(100))))
-        collectService.collect("q", morning)
+        given(gitHubClient.getRepository(repoId)).willReturn(repoWithStars(120))
+        val second = collectService.collect(Instant.parse("2026-11-23T10:00:00Z"))
 
-        given(gitHubClient.searchRepositories("q", 100))
-            .willReturn(SearchResponse(1, listOf(repoWithStars(120))))
-        collectService.collect("q", evening)
+        val snapshot = snapshotRepository.findByRepoIdAndCapturedOn(repoId, LocalDate.parse("2026-11-23"))
+        assertTrue(repoRepository.existsById(repoId))
+        assertEquals(100, snapshot?.stars)
+        assertEquals(0, second.tracked)
+    }
 
-        val snapshot = snapshotRepository.findByRepoIdAndCapturedOn(900001, LocalDate.parse("2026-11-23"))
-        assertTrue(repoRepository.existsById(900001))
-        assertEquals(120, snapshot?.stars)
+    @Test
+    fun repoMissingFromSearchIsStillTracked() {
+        searchReturns(repoWithStars(100))
+        given(gitHubClient.getRepository(repoId)).willReturn(repoWithStars(100))
+        collectService.collect(Instant.parse("2026-11-23T01:00:00Z"))
+
+        searchReturns()
+        given(gitHubClient.getRepository(repoId)).willReturn(repoWithStars(150))
+        collectService.collect(Instant.parse("2026-11-24T01:00:00Z"))
+
+        val nextDay = snapshotRepository.findByRepoIdAndCapturedOn(repoId, LocalDate.parse("2026-11-24"))
+        assertEquals(150, nextDay?.stars)
     }
 }

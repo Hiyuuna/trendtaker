@@ -35,6 +35,9 @@ class CollectServiceTest {
     @Autowired
     lateinit var snapshotRepository: RepoSnapshotRepository
 
+    @Autowired
+    lateinit var collectRunRepository: CollectRunRepository
+
     @MockitoBean
     lateinit var gitHubClient: GitHubClient
 
@@ -148,5 +151,30 @@ class CollectServiceTest {
         assertTrue(result?.stoppedByRateLimit == true)
         assertEquals(0, result?.tracked)
         assertNull(starsOn(repoId, "2026-11-23"))
+    }
+
+    @Test
+    fun successfulCollectIsRecorded() {
+        searchReturns(repo(stars = 100))
+        given(gitHubClient.getRepository(repoId)).willReturn(repo(stars = 100))
+        collectService.collect(day1)
+
+        val run = collectRunRepository.findAll().single()
+        assertEquals(CollectStatus.SUCCEEDED, run.status)
+        assertEquals(day1, run.startedAt)
+        assertNotNull(run.finishedAt)
+        assertEquals(1, run.discovered)
+        assertEquals(1, run.tracked)
+        assertEquals(0, run.failed)
+    }
+
+    @Test
+    fun discoverFailureIsRecordedAsPartial() {
+        given(gitHubClient.searchRepositories(anyString(), anyInt())).willThrow(RuntimeException("search down"))
+        collectService.collect(day1)
+
+        val run = collectRunRepository.findAll().single()
+        assertEquals(CollectStatus.PARTIAL, run.status)
+        assertTrue(run.error!!.contains("search down"))
     }
 }

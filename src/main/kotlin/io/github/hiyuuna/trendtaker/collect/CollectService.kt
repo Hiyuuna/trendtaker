@@ -28,12 +28,14 @@ class CollectService(
     private val repoRepository: RepoRepository,
     private val snapshotRepository: RepoSnapshotRepository,
     private val rateLimitWaiter: RateLimitWaiter,
+    private val collectRunRepository: CollectRunRepository,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val running = AtomicBoolean(false)
 
     fun collect(now: Instant = Instant.now()): CollectResult? {
         if (!running.compareAndSet(false, true)) return null
+        val run = collectRunRepository.save(CollectRun(startedAt = now))
         try {
             val today = LocalDate.ofInstant(now, ZoneOffset.UTC)
 
@@ -47,7 +49,15 @@ class CollectService(
             }
 
             val track = track(today, now)
-            return CollectResult(discovered, track.tracked, track.failed, discoverError, track.stoppedByRateLimit)
+            val result = CollectResult(discovered, track.tracked, track.failed, discoverError, track.stoppedByRateLimit)
+            finish(run, result)
+            return result
+        } catch (e: Exception) {
+            run.status = CollectStatus.FAILED
+            run.finishedAt = Instant.now()
+            run.error = shorten(e.message ?: e.javaClass.simpleName)
+            collectRunRepository.save(run)
+            throw e
         } finally {
             running.set(false)
         }
@@ -128,6 +138,20 @@ class CollectService(
             gitHubClient.getRepository(id)
         }
     }
+
+    private fun finish(run: CollectRun, result: CollectResult) {
+        val clean = result.failed == 0 && result.discoverError == null && !result.stoppedByRateLimit
+        run.status = if (clean) CollectStatus.SUCCEEDED else CollectStatus.PARTIAL
+        run.finishedAt = Instant.now()
+        run.discovered = result.discovered
+        run.tracked = result.tracked
+        run.failed = result.failed
+        run.stoppedByRateLimit = result.stoppedByRateLimit
+        run.error = result.discoverError?.let { shorten("discover: $it") }
+        collectRunRepository.save(run)
+    }
+
+    private fun shorten(message: String) = message.take(1000)
 
     private fun htmlUrlOf(item: GitHubRepo): String {
         return item.htmlUrl ?: "https://github.com/${item.fullName}"

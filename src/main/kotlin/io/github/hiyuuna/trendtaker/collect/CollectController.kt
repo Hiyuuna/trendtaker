@@ -1,6 +1,8 @@
 package io.github.hiyuuna.trendtaker.collect
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -9,7 +11,8 @@ import org.springframework.web.bind.annotation.RestController
 class CollectController(private val collectService: CollectService) {
 
     @PostMapping("/collect")
-    fun collect(): CollectResult {
-        return collectService.collect()
+    fun collect(): ResponseEntity<CollectResult> {
+        val result = collectService.collect() ?: return ResponseEntity.status(HttpStatus.CONFLICT).build()
+        return ResponseEntity.ok(result)
     }
 }

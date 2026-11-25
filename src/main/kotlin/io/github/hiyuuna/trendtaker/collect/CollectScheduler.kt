@@ -14,7 +14,14 @@ class CollectScheduler(private val collectService: CollectService) {
         log.info("collect started")
         try {
             val result = collectService.collect()
-            log.info("collect finished: discovered={}, tracked={}", result.discovered, result.tracked)
+            if (result == null) {
+                log.warn("collect skipped: already running")
+                return
+            }
+            log.info(
+                "collect finished: discovered={}, tracked={}, failed={}, discoverError={}, stoppedByRateLimit={}",
+                result.discovered, result.tracked, result.failed, result.discoverError, result.stoppedByRateLimit,
+            )
         } catch (e: Exception) {
             log.error("collect failed", e)
         }

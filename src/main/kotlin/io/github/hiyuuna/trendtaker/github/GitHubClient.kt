@@ -4,6 +4,10 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestClient
+import java.time.Instant
+
+class GitHubRateLimitException(val resetAt: Instant) :
+    RuntimeException("GitHub rate limit exceeded until $resetAt")
 
 @Component
 class GitHubClient(
@@ -17,21 +21,41 @@ class GitHubClient(
         .build()
 
     fun searchRepositories(query: String, perPage: Int = 10): SearchResponse {
-        return restClient.get()
-            .uri("/search/repositories?q={q}&sort=stars&order=desc&per_page={perPage}", query, perPage)
-            .retrieve()
-            .body(SearchResponse::class.java)
-            ?: throw IllegalArgumentException("GitHub response body is empty")
+        return call {
+            restClient.get()
+                .uri("/search/repositories?q={q}&sort=stars&order=desc&per_page={perPage}", query, perPage)
+                .retrieve()
+                .body(SearchResponse::class.java)
+        } ?: throw IllegalArgumentException("GitHub response body is empty")
     }
 
     fun getRepository(id: Long): GitHubRepo? {
         return try {
-            restClient.get()
-                .uri("/repositories/{id}", id)
-                .retrieve()
-                .body(GitHubRepo::class.java)
+            call {
+                restClient.get()
+                    .uri("/repositories/{id}", id)
+                    .retrieve()
+                    .body(GitHubRepo::class.java)
+            }
         } catch (e: HttpClientErrorException.NotFound) {
             null
+        }
+    }
+
+    private fun <T> call(request: () -> T): T {
+        try {
+            return request()
+        } catch (e: HttpClientErrorException) {
+            val status = e.statusCode.value()
+            if (status == 403 || status == 429) {
+                val headers = e.responseHeaders
+                val retryAfter = headers?.getFirst("retry-after")?.toLongOrNull()
+                val reset = headers?.getFirst("x-ratelimit-reset")?.toLongOrNull()
+                val remaining = headers?.getFirst("x-ratelimit-remaining")
+                if (retryAfter != null) throw GitHubRateLimitException(Instant.now().plusSeconds(retryAfter))
+                if (remaining == "0" && reset != null) throw GitHubRateLimitException(Instant.ofEpochSecond(reset))
+            }
+            throw e
         }
     }
 }

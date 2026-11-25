@@ -1,29 +1,56 @@
 package io.github.hiyuuna.trendtaker.collect
 
 import io.github.hiyuuna.trendtaker.github.GitHubClient
+import io.github.hiyuuna.trendtaker.github.GitHubRateLimitException
 import io.github.hiyuuna.trendtaker.github.GitHubRepo
 import io.github.hiyuuna.trendtaker.repo.Repo
 import io.github.hiyuuna.trendtaker.repo.RepoRepository
 import io.github.hiyuuna.trendtaker.repo.RepoSnapshot
 import io.github.hiyuuna.trendtaker.repo.RepoSnapshotRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.util.concurrent.atomic.AtomicBoolean
 
-data class CollectResult(val discovered: Int, val tracked: Int)
+data class CollectResult(
+    val discovered: Int,
+    val tracked: Int,
+    val failed: Int,
+    val discoverError: String? = null,
+    val stoppedByRateLimit: Boolean = false,
+)
 
 @Service
 class CollectService(
     private val gitHubClient: GitHubClient,
     private val repoRepository: RepoRepository,
     private val snapshotRepository: RepoSnapshotRepository,
+    private val rateLimitWaiter: RateLimitWaiter,
 ) {
-    fun collect(now: Instant = Instant.now()): CollectResult {
-        val today = LocalDate.ofInstant(now, ZoneOffset.UTC)
-        val discovered = discover(today, now)
-        val tracked = track(today, now)
-        return CollectResult(discovered, tracked)
+    private val log = LoggerFactory.getLogger(javaClass)
+    private val running = AtomicBoolean(false)
+
+    fun collect(now: Instant = Instant.now()): CollectResult? {
+        if (!running.compareAndSet(false, true)) return null
+        try {
+            val today = LocalDate.ofInstant(now, ZoneOffset.UTC)
+
+            var discoverError: String? = null
+            val discovered = try {
+                discover(today, now)
+            } catch (e: Exception) {
+                log.warn("discover failed", e)
+                discoverError = e.message ?: e.javaClass.simpleName
+                0
+            }
+
+            val track = track(today, now)
+            return CollectResult(discovered, track.tracked, track.failed, discoverError, track.stoppedByRateLimit)
+        } finally {
+            running.set(false)
+        }
     }
 
     private fun discover(today: LocalDate, now: Instant): Int {
@@ -51,35 +78,55 @@ class CollectService(
         return discovered
     }
 
-    private fun track(today: LocalDate, now: Instant): Int {
-        var tracked = 0
+    private class TrackResult(var tracked: Int = 0, var failed: Int = 0, var stoppedByRateLimit: Boolean = false)
+
+    private fun track(today: LocalDate, now: Instant): TrackResult {
+        val result = TrackResult()
         for (repo in repoRepository.findAll()) {
             if (snapshotRepository.findByRepoIdAndCapturedOn(repo.id, today) != null) continue
-            val item = gitHubClient.getRepository(repo.id) ?: continue
+            try {
+                val item = fetchRepository(repo.id) ?: continue
 
-            repo.fullName = item.fullName
-            repo.description = item.description
-            repo.language = item.language
-            repo.htmlUrl = htmlUrlOf(item)
-            repo.topics = item.topics
-            repo.fork = item.fork
-            repo.archived = item.archived
-            repo.updatedAt = now
-            repoRepository.save(repo)
+                repo.fullName = item.fullName
+                repo.description = item.description
+                repo.language = item.language
+                repo.htmlUrl = htmlUrlOf(item)
+                repo.topics = item.topics
+                repo.fork = item.fork
+                repo.archived = item.archived
+                repo.updatedAt = now
+                repoRepository.save(repo)
 
-            snapshotRepository.save(
-                RepoSnapshot(
-                    repoId = repo.id,
-                    capturedOn = today,
-                    stars = item.stargazersCount,
-                    forks = item.forksCount,
-                    openIssues = item.openIssuesCount,
-                    capturedAt = now,
+                snapshotRepository.save(
+                    RepoSnapshot(
+                        repoId = repo.id,
+                        capturedOn = today,
+                        stars = item.stargazersCount,
+                        forks = item.forksCount,
+                        openIssues = item.openIssuesCount,
+                        capturedAt = now,
+                    )
                 )
-            )
-            tracked++
+                result.tracked++
+            } catch (e: GitHubRateLimitException) {
+                log.warn("rate limit reached until {}, stopping track", e.resetAt)
+                result.stoppedByRateLimit = true
+                break
+            } catch (e: Exception) {
+                log.warn("track failed for repo {}", repo.id, e)
+                result.failed++
+            }
         }
-        return tracked
+        return result
+    }
+
+    private fun fetchRepository(id: Long): GitHubRepo? {
+        return try {
+            gitHubClient.getRepository(id)
+        } catch (e: GitHubRateLimitException) {
+            if (!rateLimitWaiter.waitUntil(e.resetAt)) throw e
+            gitHubClient.getRepository(id)
+        }
     }
 
     private fun htmlUrlOf(item: GitHubRepo): String {

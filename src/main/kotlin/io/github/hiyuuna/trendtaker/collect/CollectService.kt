@@ -78,7 +78,7 @@ class CollectService(
                     fullName = item.fullName,
                     description = item.description,
                     language = item.language,
-                    htmlUrl = htmlUrlOf(item),
+                    htmlUrl = item.htmlUrl,
                     topics = item.topics,
                     fork = item.fork,
                     archived = item.archived,
@@ -113,7 +113,7 @@ class CollectService(
                 repo.fullName = item.fullName
                 repo.description = item.description
                 repo.language = item.language
-                repo.htmlUrl = htmlUrlOf(item)
+                repo.htmlUrl = item.htmlUrl
                 repo.topics = item.topics
                 repo.fork = item.fork
                 repo.archived = item.archived
@@ -174,10 +174,6 @@ class CollectService(
     }
 
     private fun shorten(message: String) = message.take(1000)
-
-    private fun htmlUrlOf(item: GitHubRepo): String {
-        return item.htmlUrl ?: "https://github.com/${item.fullName}"
-    }
 
     companion object {
         private const val DISCOVER_DAYS = 30L

@@ -26,7 +26,7 @@ class GitHubClient(
                 .uri("/search/repositories?q={q}&sort=stars&order=desc&per_page={perPage}", query, perPage)
                 .retrieve()
                 .body(SearchResponse::class.java)
-        } ?: throw IllegalArgumentException("GitHub response body is empty")
+        } ?: throw IllegalStateException("GitHub response body is empty")
     }
 
     fun getRepository(id: Long): GitHubRepo? {

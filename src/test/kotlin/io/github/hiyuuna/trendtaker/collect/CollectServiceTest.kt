@@ -111,7 +111,7 @@ class CollectServiceTest {
         val result = collectService.collect(day2)
 
         assertNotNull(result?.discoverError)
-        assertEquals(1, result?.tracked)
+        assertEquals(1, result.tracked)
         assertEquals(130, starsOn(repoId, "2026-11-24"))
     }
 
@@ -149,7 +149,7 @@ class CollectServiceTest {
         val result = collectService.collect(day1)
 
         assertTrue(result?.stoppedByRateLimit == true)
-        assertEquals(0, result?.tracked)
+        assertEquals(0, result.tracked)
         assertNull(starsOn(repoId, "2026-11-23"))
     }
 

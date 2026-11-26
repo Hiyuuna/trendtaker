@@ -23,7 +23,7 @@ data class GitHubRepo(
     val openIssuesCount: Int,
     val createdAt: Instant,
     val pushedAt: Instant?,
-    val htmlUrl: String?,
+    val htmlUrl: String,
     val topics: List<String> = emptyList(),
     val fork: Boolean,
     val archived: Boolean,

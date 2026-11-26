@@ -9,6 +9,7 @@ import io.github.hiyuuna.trendtaker.repo.RepoSnapshot
 import io.github.hiyuuna.trendtaker.repo.RepoSnapshotRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -20,6 +21,7 @@ data class CollectResult(
     val failed: Int,
     val discoverError: String? = null,
     val stoppedByRateLimit: Boolean = false,
+    val inactive: Int = 0,
 )
 
 @Service
@@ -49,7 +51,9 @@ class CollectService(
             }
 
             val track = track(today, now)
-            val result = CollectResult(discovered, track.tracked, track.failed, discoverError, track.stoppedByRateLimit)
+            val result = CollectResult(
+                discovered, track.tracked, track.failed, discoverError, track.stoppedByRateLimit, track.inactive,
+            )
             finish(run, result)
             return result
         } catch (e: Exception) {
@@ -88,12 +92,21 @@ class CollectService(
         return discovered
     }
 
-    private class TrackResult(var tracked: Int = 0, var failed: Int = 0, var stoppedByRateLimit: Boolean = false)
+    private class TrackResult(
+        var tracked: Int = 0,
+        var failed: Int = 0,
+        var inactive: Int = 0,
+        var stoppedByRateLimit: Boolean = false,
+    )
 
     private fun track(today: LocalDate, now: Instant): TrackResult {
         val result = TrackResult()
         for (repo in repoRepository.findAll()) {
             if (snapshotRepository.findByRepoIdAndCapturedOn(repo.id, today) != null) continue
+            if (isInactive(repo, today, now)) {
+                result.inactive++
+                continue
+            }
             try {
                 val item = fetchRepository(repo.id) ?: continue
 
@@ -130,6 +143,15 @@ class CollectService(
         return result
     }
 
+    private fun isInactive(repo: Repo, today: LocalDate, now: Instant): Boolean {
+        if (repo.firstSeenAt.isAfter(now.minus(Duration.ofDays(INACTIVE_DAYS)))) return false
+        val before = snapshotRepository
+            .findTopByRepoIdAndCapturedOnLessThanEqualOrderByCapturedOnDesc(repo.id, today.minusDays(INACTIVE_DAYS))
+            ?: return false
+        val latest = snapshotRepository.findTopByRepoIdOrderByCapturedOnDesc(repo.id) ?: return false
+        return latest.stars <= before.stars
+    }
+
     private fun fetchRepository(id: Long): GitHubRepo? {
         return try {
             gitHubClient.getRepository(id)
@@ -160,5 +182,6 @@ class CollectService(
     companion object {
         private const val DISCOVER_DAYS = 30L
         private const val DISCOVER_MIN_STARS = 50
+        private const val INACTIVE_DAYS = 30L
     }
 }

@@ -177,4 +177,32 @@ class CollectServiceTest {
         assertEquals(CollectStatus.PARTIAL, run.status)
         assertTrue(run.error!!.contains("search down"))
     }
+
+    @Test
+    fun repoWithoutStarGrowthForThirtyDaysIsNoLongerTracked() {
+        searchReturns(repo(stars = 100))
+        given(gitHubClient.getRepository(repoId)).willReturn(repo(stars = 100))
+        collectService.collect(Instant.parse("2026-10-01T01:00:00Z"))
+
+        val result = collectService.collect(Instant.parse("2026-11-05T01:00:00Z"))
+
+        assertEquals(1, result?.inactive)
+        assertEquals(0, result?.tracked)
+        assertNull(starsOn(repoId, "2026-11-05"))
+    }
+
+    @Test
+    fun repoWithStarGrowthKeepsBeingTracked() {
+        searchReturns(repo(stars = 100))
+        given(gitHubClient.getRepository(repoId)).willReturn(repo(stars = 100))
+        collectService.collect(Instant.parse("2026-10-01T01:00:00Z"))
+
+        given(gitHubClient.getRepository(repoId)).willReturn(repo(stars = 150))
+        collectService.collect(Instant.parse("2026-10-20T01:00:00Z"))
+
+        val result = collectService.collect(Instant.parse("2026-11-05T01:00:00Z"))
+
+        assertEquals(0, result?.inactive)
+        assertEquals(150, starsOn(repoId, "2026-11-05"))
+    }
 }

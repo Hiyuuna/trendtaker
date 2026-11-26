@@ -19,8 +19,8 @@ class CollectScheduler(private val collectService: CollectService) {
                 return
             }
             log.info(
-                "collect finished: discovered={}, tracked={}, failed={}, discoverError={}, stoppedByRateLimit={}",
-                result.discovered, result.tracked, result.failed, result.discoverError, result.stoppedByRateLimit,
+                "collect finished: discovered={}, tracked={}, inactive={}, failed={}, discoverError={}, stoppedByRateLimit={}",
+                result.discovered, result.tracked, result.inactive, result.failed, result.discoverError, result.stoppedByRateLimit,
             )
         } catch (e: Exception) {
             log.error("collect failed", e)
